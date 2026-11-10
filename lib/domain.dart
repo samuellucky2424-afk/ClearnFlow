@@ -26,6 +26,21 @@ Map<String, List<StorageFile>> duplicateGroups(List<StorageFile> files) {
   return groups;
 }
 
+StorageFile suggestedKeep(List<StorageFile> group) {
+  assert(group.isNotEmpty);
+  final ranked = group.toList()..sort((a, b) {
+    final am = a.modified == 0 ? 0x7fffffffffffffff : a.modified;
+    final bm = b.modified == 0 ? 0x7fffffffffffffff : b.modified;
+    final byDate = am.compareTo(bm);
+    return byDate != 0 ? byDate : a.uri.compareTo(b.uri);
+  });
+  return ranked.first;
+}
+
+bool maySelectDuplicate(StorageFile candidate, List<StorageFile> group, Set<String> selected) =>
+    !selected.contains(candidate.uri) &&
+    group.where((file) => selected.contains(file.uri)).length < group.length - 1;
+
 String formatBytes(int bytes) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   var n = bytes.toDouble();

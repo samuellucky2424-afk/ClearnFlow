@@ -156,7 +156,7 @@ class _HomeState extends State<Home> {
         if (groups.isEmpty) const Expanded(child: Center(child: Text('No exact duplicates found in accessible files.')))
         else Expanded(child: ListView.builder(itemCount: groups.length, itemBuilder: (context, index) {
           final group = groups[index].toList()..sort((a, b) => a.modified.compareTo(b.modified));
-          final recommended = group.first;
+          final recommended = suggestedKeep(group);
           return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Padding(padding: const EdgeInsets.fromLTRB(18, 18, 18, 8), child: Text(
               '${group.length} identical • ${formatBytes(group.first.bytes)} each',
@@ -173,7 +173,7 @@ class _HomeState extends State<Home> {
                       Positioned(right: 2, top: 2, child: Checkbox(value: selected.contains(file.uri),
                         fillColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? blue : Colors.white),
                         onChanged: (value) {
-                          if (value == true && group.where((f) => selected.contains(f.uri)).length >= group.length - 1) {
+                          if (value == true && !maySelectDuplicate(file, group, selected)) {
                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Keep at least one copy in each group.')));
                             return;
                           }

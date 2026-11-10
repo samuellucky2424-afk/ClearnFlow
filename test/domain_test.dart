@@ -13,4 +13,12 @@ void main() {
   test('no false duplicates for unreadable or empty files', () {
     expect(duplicateGroups([file('a', null, 10), file('b', null, 10), file('c', 'hash', 0), file('d', 'hash', 0)]), isEmpty);
   });
+  test('duplicate review always retains one copy', () {
+    final a = file('a', 'same', 100);
+    final b = file('b', 'same', 100);
+    final group = [a, b];
+    expect(maySelectDuplicate(a, group, {}), isTrue);
+    expect(maySelectDuplicate(b, group, {a.uri}), isFalse);
+    expect(suggestedKeep(group).uri, 'a');
+  });
 }
