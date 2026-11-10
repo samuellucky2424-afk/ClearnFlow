@@ -167,7 +167,7 @@ class _HomeState extends State<Home> {
       const Spacer(flex: 3),
       Stack(alignment: Alignment.center, children: [
         Container(width: 142, height: 142, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .12), borderRadius: BorderRadius.circular(36))),
-        const Icon(Icons.cleaning_services_rounded, color: Colors.white, size: 110),
+        Transform.rotate(angle: .35, child: const Icon(Icons.cleaning_services_rounded, color: Colors.white, size: 110)),
         const Positioned(top: 4, right: 8, child: Icon(Icons.auto_awesome, color: Color(0xff56e5ff), size: 30)),
       ]),
       const SizedBox(height: 24), const Text('CleanFlow', style: TextStyle(color: Colors.white, fontSize: 43, fontWeight: FontWeight.w800)),

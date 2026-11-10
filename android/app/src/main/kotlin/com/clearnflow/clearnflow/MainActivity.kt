@@ -165,9 +165,16 @@ class MainActivity : FlutterActivity() {
         }
         val sizeBuckets = entries.values.groupBy { it.size }.filterKeys { it > 0 }.filterValues { it.size > 1 }
         val digests = mutableMapOf<String, String?>()
-        for (group in sizeBuckets.values) for (item in group) {
-            try { digests[item.uri.toString()] = hash(item) }
-            catch (e: Exception) { warnings.add("Could not read ${item.name}") }
+        for (sameSize in sizeBuckets.values) {
+            val quickGroups = mutableMapOf<String, MutableList<Entry>>()
+            for (item in sameSize) {
+                try { quickGroups.getOrPut(quickHash(item)) { mutableListOf() }.add(item) }
+                catch (e: Exception) { warnings.add("Could not read ${item.name}") }
+            }
+            for (candidates in quickGroups.values.filter { it.size > 1 }) for (item in candidates) {
+                try { digests[item.uri.toString()] = hash(item) }
+                catch (e: Exception) { warnings.add("Could not read ${item.name}") }
+            }
         }
         latest = entries.mapValues { (_, e) -> e.copy(digest = digests[e.uri.toString()]) }
         val stat = StatFs(Environment.getExternalStorageDirectory().path)
@@ -233,6 +240,23 @@ class MainActivity : FlutterActivity() {
         stream.use { input ->
             val buffer = ByteArray(64 * 1024)
             while (true) { val n = input.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun quickHash(entry: Entry): String {
+        val file = entry.file ?: return hash(entry)
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val start = ByteArray(64 * 1024)
+            val read = input.read(start)
+            if (read > 0) digest.update(start, 0, read)
+        }
+        if (entry.size > 64 * 1024) file.inputStream().use { input ->
+            input.skip(entry.size - 64 * 1024)
+            val end = ByteArray(64 * 1024)
+            val read = input.read(end)
+            if (read > 0) digest.update(end, 0, read)
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
