@@ -178,10 +178,12 @@ class MainActivity : FlutterActivity() {
         }
         latest = entries.mapValues { (_, e) -> e.copy(digest = digests[e.uri.toString()]) }
         val stat = StatFs(Environment.getExternalStorageDirectory().path)
+        val scannedAt = System.currentTimeMillis()
+        prefs.edit().putLong("lastScan", scannedAt).apply()
         return mapOf("total" to stat.totalBytes, "available" to stat.availableBytes,
-            "warnings" to warnings.take(25), "access" to broadAccess(), "files" to latest.values.map {
+            "warnings" to warnings.take(25), "access" to broadAccess(), "scannedAt" to scannedAt, "files" to latest.values.map {
                 mapOf("uri" to it.uri.toString(), "name" to it.name, "path" to it.path,
-                    "bytes" to it.size, "mime" to it.mime, "digest" to it.digest, "deletable" to true)
+                    "bytes" to it.size, "mime" to it.mime, "digest" to it.digest, "deletable" to true, "modified" to it.modified)
             })
     }
 
@@ -224,11 +226,13 @@ class MainActivity : FlutterActivity() {
     private fun addFile(uri: Uri, path: String, out: MutableMap<String, Entry>, warnings: MutableList<String>) {
         try {
             contentResolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null)?.use { c ->
+                DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED), null, null, null)?.use { c ->
                 if (c.moveToFirst()) {
                     val name = c.getString(0) ?: "Untitled"
                     val bytes = if (c.isNull(1)) 0L else c.getLong(1)
-                    out[uri.toString()] = Entry(uri, name, path, bytes, c.getString(2) ?: "application/octet-stream", null)
+                    val modified = if (c.isNull(3)) 0L else c.getLong(3)
+                    out[uri.toString()] = Entry(uri, name, path, bytes, c.getString(2) ?: "application/octet-stream", null, modified = modified)
                 }
             }
         } catch (e: Exception) { warnings.add("Could not inspect a file in $path") }

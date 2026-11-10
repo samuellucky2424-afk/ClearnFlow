@@ -26,7 +26,8 @@ class AndroidStorageService implements StorageService {
     final m = (await channel.invokeMapMethod<Object?, Object?>('scan'))!;
     return ScanReport(files: (m['files']! as List).map((e) => StorageFile.fromMap(e as Map<Object?, Object?>)).toList(),
       total: (m['total']! as num).toInt(), available: (m['available']! as num).toInt(),
-      warnings: (m['warnings']! as List).cast<String>(), fullAccess: m['access'] == true);
+      warnings: (m['warnings']! as List).cast<String>(), fullAccess: m['access'] == true,
+      scannedAt: (m['scannedAt'] as num?)?.toInt() ?? 0);
   }
   @override
   Future<bool> chooseFolder() async => await channel.invokeMethod<bool>('chooseFolder') ?? false;

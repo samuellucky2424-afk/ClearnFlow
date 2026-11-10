@@ -1,13 +1,14 @@
 class StorageFile {
   const StorageFile({required this.uri, required this.name, required this.bytes,
-    required this.path, required this.mime, this.digest, required this.deletable});
+    required this.path, required this.mime, this.digest, required this.deletable, this.modified = 0});
   factory StorageFile.fromMap(Map<Object?, Object?> m) => StorageFile(
     uri: m['uri']! as String, name: m['name']! as String,
     bytes: (m['bytes']! as num).toInt(), path: m['path']! as String,
     mime: m['mime']! as String, digest: m['digest'] as String?,
-    deletable: m['deletable'] == true);
+    deletable: m['deletable'] == true, modified: (m['modified'] as num?)?.toInt() ?? 0);
   final String uri, name, path, mime;
   final int bytes;
+  final int modified;
   final String? digest;
   final bool deletable;
   bool get screenshot => '$path/$name'.toLowerCase().contains('screenshot');
@@ -34,11 +35,12 @@ String formatBytes(int bytes) {
 }
 
 class ScanReport {
-  const ScanReport({this.files = const [], this.total = 0, this.available = 0, this.warnings = const [], this.fullAccess = false});
+  const ScanReport({this.files = const [], this.total = 0, this.available = 0, this.warnings = const [], this.fullAccess = false, this.scannedAt = 0});
   final List<StorageFile> files;
   final int total, available;
   final List<String> warnings;
   final bool fullAccess;
+  final int scannedAt;
   int get reviewedBytes => files.fold(0, (sum, f) => sum + f.bytes);
 }
 

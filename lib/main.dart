@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'domain.dart';
+import 'findings.dart';
 import 'storage_service.dart';
 
 void main() => runApp(const ClearnFlowApp());
@@ -21,7 +23,7 @@ class ClearnFlowApp extends StatelessWidget {
   );
 }
 
-enum Area { duplicates, large, downloads, screenshots, images, videos, audio, documents, other, all }
+enum Area { duplicates, large, downloads, screenshots, review, images, videos, audio, documents, other, all }
 
 class Home extends StatefulWidget {
   const Home({super.key, required this.service});
@@ -75,6 +77,7 @@ class _HomeState extends State<Home> {
       case Area.large: return files.where((e) => e.bytes >= 10 * 1024 * 1024).toList()..sort((a, b) => b.bytes.compareTo(a.bytes));
       case Area.downloads: return files.where((e) => e.download).toList();
       case Area.screenshots: return files.where((e) => e.screenshot).toList();
+      case Area.review: return reviewFindings(files, DateTime.now()).map((e) => e.file).toList();
       case Area.images: return files.where((e) => e.mime.startsWith('image/')).toList();
       case Area.videos: return files.where((e) => e.mime.startsWith('video/')).toList();
       case Area.audio: return files.where((e) => e.mime.startsWith('audio/')).toList();
@@ -87,11 +90,12 @@ class _HomeState extends State<Home> {
     ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].any((ext) => file.name.toLowerCase().endsWith('.$ext'));
   String _title(Area area) => switch (area) {
     Area.duplicates => 'Duplicate files', Area.large => 'Large files', Area.downloads => 'Downloads',
-    Area.screenshots => 'Screenshots', Area.images => 'Images', Area.videos => 'Videos',
+    Area.screenshots => 'Screenshots', Area.review => 'Review suggested files', Area.images => 'Images', Area.videos => 'Videos',
     Area.audio => 'Audio', Area.documents => 'Documents', Area.other => 'Other files', Area.all => 'All files'};
   IconData _icon(Area area) => switch (area) {
     Area.duplicates => Icons.file_copy_outlined, Area.large => Icons.folder_outlined,
     Area.downloads => Icons.download_outlined, Area.screenshots => Icons.screenshot_outlined,
+    Area.review => Icons.cleaning_services_outlined,
     Area.images => Icons.image_outlined, Area.videos => Icons.movie_outlined,
     Area.audio => Icons.music_note_outlined, Area.documents => Icons.description_outlined,
     Area.other => Icons.insert_drive_file_outlined, Area.all => Icons.folder_open_outlined};
@@ -122,7 +126,74 @@ class _HomeState extends State<Home> {
       if (result.failures.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 24), child: Text('Could not delete:\n${result.failures.join('\n')}')),
       const Spacer(), FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
     ])));
-  void _openArea(Area area) { selected.clear(); Navigator.push(context, MaterialPageRoute(builder: (_) => _areaPage(area))); }
+  void _openArea(Area area) { selected.clear(); Navigator.push(context, MaterialPageRoute(builder: (_) => area == Area.duplicates ? _duplicatesPage() : _areaPage(area))); }
+  Widget _artwork(StorageFile file, {double size = 52}) {
+    if (file.mime.startsWith('image/') && file.uri.startsWith('file:')) {
+      return ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(
+        File.fromUri(Uri.parse(file.uri)), width: size, height: size, fit: BoxFit.cover,
+        cacheWidth: 360, errorBuilder: (_, _, _) => Icon(Icons.broken_image_outlined, color: blue, size: size * .6),
+      ));
+    }
+    final icon = file.mime.startsWith('video/') ? Icons.movie_outlined :
+      file.mime.startsWith('audio/') ? Icons.music_note_outlined : Icons.insert_drive_file_outlined;
+    return SizedBox(width: size, height: size, child: ColoredBox(color: const Color(0xffe8f1ff), child: Icon(icon, color: blue, size: size * .55)));
+  }
+  Widget _duplicatesPage() => StatefulBuilder(builder: (context, refresh) {
+    final groups = duplicateGroups(report.files).values.toList()
+      ..sort((a, b) => b.first.bytes.compareTo(a.first.bytes));
+    final visible = groups.expand((group) => group).toList();
+    final chosen = visible.where((file) => selected.contains(file.uri)).toList();
+    final avoidableBytes = groups.fold<int>(0, (sum, group) => sum + (group.length - 1) * group.first.bytes);
+    return Scaffold(appBar: AppBar(title: const Text('Duplicate files')),
+      body: Column(children: [
+        Container(width: double.infinity, margin: const EdgeInsets.all(14), padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(color: const Color(0xffe3ecff), borderRadius: BorderRadius.circular(20)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${groups.length} groups • ${visible.length} identical files', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('Up to ${formatBytes(avoidableBytes)} if one copy from each group is kept.'),
+            const Text('All selections start empty. Open files to review them.'),
+          ])),
+        if (groups.isEmpty) const Expanded(child: Center(child: Text('No exact duplicates found in accessible files.')))
+        else Expanded(child: ListView.builder(itemCount: groups.length, itemBuilder: (context, index) {
+          final group = groups[index].toList()..sort((a, b) => a.modified.compareTo(b.modified));
+          final recommended = group.first;
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Padding(padding: const EdgeInsets.fromLTRB(18, 18, 18, 8), child: Text(
+              '${group.length} identical • ${formatBytes(group.first.bytes)} each',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold))),
+            SizedBox(height: 210, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 14),
+              scrollDirection: Axis.horizontal, itemCount: group.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8), itemBuilder: (context, i) {
+                final file = group[i];
+                return SizedBox(width: 152, child: Card(clipBehavior: Clip.antiAlias, child: InkWell(
+                  onTap: () async { try { await widget.service.preview(file.uri); } catch (e) { if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))); } },
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Stack(children: [
+                      SizedBox(width: 152, height: 112, child: _artwork(file, size: 152)),
+                      Positioned(right: 2, top: 2, child: Checkbox(value: selected.contains(file.uri),
+                        fillColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? blue : Colors.white),
+                        onChanged: (value) {
+                          if (value == true && group.where((f) => selected.contains(f.uri)).length >= group.length - 1) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Keep at least one copy in each group.')));
+                            return;
+                          }
+                          refresh(() { if (value == true) { selected.add(file.uri); } else { selected.remove(file.uri); } });
+                        })),
+                    ]),
+                    Padding(padding: const EdgeInsets.symmetric(horizontal: 7), child: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    Padding(padding: const EdgeInsets.symmetric(horizontal: 7), child: Text(formatBytes(file.bytes))),
+                    if (file.uri == recommended.uri) const Padding(padding: EdgeInsets.symmetric(horizontal: 7), child: Text('Keep suggested (oldest)', style: TextStyle(color: Color(0xff008c72), fontWeight: FontWeight.bold, fontSize: 12))),
+                  ]))));
+              })),
+          ]);
+        })),
+        Padding(padding: const EdgeInsets.all(16), child: SizedBox(width: double.infinity, child: FilledButton.icon(
+          onPressed: chosen.isEmpty ? null : () async { await _delete(visible); refresh(() {}); },
+          icon: const Icon(Icons.delete_outline),
+          label: Text('Delete ${chosen.length} selected • ${formatBytes(chosen.fold<int>(0, (sum, f) => sum + f.bytes))}'),
+        ))),
+      ]));
+  });
   Widget _areaPage(Area area) {
     return StatefulBuilder(builder: (context, refresh) {
       final files = _files(area);
@@ -130,15 +201,16 @@ class _HomeState extends State<Home> {
       final chosen = files.where((f) => selected.contains(f.uri)).toList();
       return Scaffold(appBar: AppBar(title: Text(_title(area)), actions: [IconButton(onPressed: busy ? null : () async { await _scan(); refresh(() {}); }, icon: const Icon(Icons.refresh))]),
         body: Column(children: [
-          if (area == Area.duplicates) const Padding(padding: EdgeInsets.all(16), child: Text('Matching size and SHA-256 content. Review each copy before deleting.')),
+          if (area == Area.review) Padding(padding: const EdgeInsets.all(16), child: Text(
+            '${files.length} items • ${formatBytes(files.fold<int>(0, (sum, file) => sum + file.bytes))}. These are suggestions, not files proven safe to delete. Preview each one first.')),
           if (files.isEmpty) Expanded(child: Center(child: Text(report.files.isEmpty ? 'Choose a folder or files on Home to start.' : 'No files found in this category.')))
           else Expanded(child: ListView.builder(padding: const EdgeInsets.all(12), itemCount: files.length, itemBuilder: (c, i) {
             final f = files[i];
             final groupSize = groups['${f.bytes}:${f.digest}']?.length;
             return Card(child: ListTile(
-              leading: CircleAvatar(backgroundColor: const Color(0xffe8f1ff), child: Icon(_icon(area), color: blue)),
+              leading: _artwork(f),
               title: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text('${formatBytes(f.bytes)}  •  ${f.path}${groupSize == null ? '' : '  •  $groupSize identical'}', maxLines: 2),
+              subtitle: Text('${formatBytes(f.bytes)}  •  ${f.path}${f.modified == 0 ? '' : '\nModified ${DateTime.fromMillisecondsSinceEpoch(f.modified).toLocal().toString().split(' ').first}'}${groupSize == null ? '' : '  •  $groupSize identical'}${area == Area.review ? '\n${reviewFinding(f, DateTime.now())?.reason ?? ''}' : ''}', maxLines: 4),
               onTap: () async { try { await widget.service.preview(f.uri); } catch (e) { if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))); } },
               trailing: Checkbox(value: selected.contains(f.uri), onChanged: f.deletable ? (v) => refresh(() { if (v == true) { selected.add(f.uri); } else { selected.remove(f.uri); } }) : null),
             ));
@@ -225,7 +297,18 @@ class _HomeState extends State<Home> {
         const SizedBox(height: 8), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Used: ${formatBytes(used)}'), Text('Free: ${formatBytes(report.available)}')]),
       ]))),
       const SizedBox(height: 8),
-      Card(child: ListTile(leading: const Icon(Icons.pie_chart_outline, color: blue), title: const Text('Storage Analyzer'), subtitle: Text('${report.files.length} files indexed'), trailing: const Icon(Icons.chevron_right), onTap: _storageDetails)),
+      Card(child: ListTile(leading: const Icon(Icons.pie_chart_outline, color: blue), title: const Text('Storage Analyzer'),
+        subtitle: Text('${report.files.length} files indexed\nLast completed scan: ${report.scannedAt == 0 ? 'Never' : DateTime.fromMillisecondsSinceEpoch(report.scannedAt).toLocal().toString().split('.').first}'),
+        isThreeLine: true, trailing: const Icon(Icons.chevron_right), onTap: _storageDetails)),
+      Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Accessible file categories', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 6),
+        for (final area in [Area.images, Area.videos, Area.audio, Area.documents, Area.other])
+          Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Row(children: [
+            Icon(_icon(area), color: blue, size: 18), const SizedBox(width: 8), Expanded(child: Text(_title(area))),
+            Text(formatBytes(_files(area).fold<int>(0, (sum, f) => sum + f.bytes))),
+          ])),
+      ]))),
       const SizedBox(height: 8),
       if (!report.fullAccess) Card(child: ListTile(leading: const Icon(Icons.lock_open, color: blue), title: const Text('Allow a full scan'), subtitle: const Text('Currently showing only files you selected'), trailing: const Icon(Icons.chevron_right), onTap: _grantAccess)),
       FilledButton.icon(onPressed: busy ? null : _scan, icon: const Icon(Icons.search), label: const Text('Scan Again')),
@@ -258,7 +341,7 @@ class _HomeState extends State<Home> {
     ]),
   )));
   Widget _toolGrid() => GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, childAspectRatio: 1.45, children: [
-    for (final area in [Area.duplicates, Area.large, Area.downloads, Area.screenshots, Area.all]) Card(child: InkWell(borderRadius: BorderRadius.circular(20), onTap: () => _openArea(area), child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(_icon(area), color: blue), const Spacer(), Text(_title(area), style: const TextStyle(fontWeight: FontWeight.bold)), Text('${_files(area).length} files')])))),
+    for (final area in [Area.duplicates, Area.large, Area.downloads, Area.screenshots, Area.review, Area.all]) Card(child: InkWell(borderRadius: BorderRadius.circular(20), onTap: () => _openArea(area), child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(_icon(area), color: blue), const Spacer(), Text(_title(area), style: const TextStyle(fontWeight: FontWeight.bold)), Text('${_files(area).length} files')])))),
   ]);
   Widget _tools() => ListView(padding: const EdgeInsets.all(18), children: [Text('Your tools', style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 12), _toolGrid(),
     const SizedBox(height: 16), const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('Junk files: Android does not allow this app to clear other apps’ caches. You can review your own selected folders and files instead.')))]);
