@@ -9,7 +9,7 @@ Flutter/Android storage review MVP. The repository and package name retain **Cle
 - Select folders or individual files with Android's Storage Access Framework. Access is saved where the document provider permits it; it can be revoked in Settings.
 - Inventory of accessible files; large files (10 MB or more), downloads, screenshots, images, videos, audio, documents and other files.
 - Storage dashboard shows real category byte totals and the last completed scan time.
-- Duplicate candidates grouped by file size, sampled locally to narrow candidates, then compared with full SHA-256 hashes. A matching name or sample alone is not considered a duplicate.
+- Duplicate candidates grouped by file size, sampled locally to narrow candidates, then compared with full SHA-256 hashes. A matching name or sample alone is not considered a duplicate. Hidden thumbnail metadata is excluded from duplicate review.
 - Duplicate groups show file sizes, locations, and on-demand thumbnails for images and videos. Audio album artwork and embedded APK icons appear when Android can read them. Files without artwork use a type-specific icon. Tapping a file opens it in a compatible app for review.
 - No copy is selected by default. **Select duplicates** selects every deletable copy except the oldest-known one in each group; **Deselect all** clears the selection. Each group has its own select/clear actions. The oldest copy is a keep suggestion, not a proven original. The app prevents deleting every copy in any group.
 - Review suggestions for accessible `.tmp`/`.temp` files, thumbnail images, APK installers, archives, and downloads older than 30 days. Thumbnail metadata files such as `.nomedia` are excluded. Suggestions do not prove a file is safe to remove.
