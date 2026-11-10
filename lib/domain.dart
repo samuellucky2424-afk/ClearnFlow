@@ -20,7 +20,9 @@ Map<String, List<StorageFile>> duplicateGroups(List<StorageFile> files) {
   for (final f in files) {
     // Hidden media-index files are not personal copies to offer in bulk review.
     if (f.name.startsWith('.') || f.path.replaceAll('\\', '/').split('/')
-        .any((part) => part == '.thumbnails')) continue;
+        .any((part) => part == '.thumbnails')) {
+      continue;
+    }
     if (f.digest != null && f.bytes > 0) {
       (groups['${f.bytes}:${f.digest}'] ??= []).add(f);
     }
