@@ -82,7 +82,11 @@ class MainActivity : FlutterActivity() {
                     val parts = it.split(','); if (parts.size != 3) null else mapOf("time" to parts[0].toLongOrNull(), "count" to parts[1].toIntOrNull(), "bytes" to parts[2].toLongOrNull())
                 })
                 "forgetAccess" -> {
-                    contentResolver.persistedUriPermissions.forEach { contentResolver.releasePersistableUriPermission(it.uri, it.modeFlags) }
+                    contentResolver.persistedUriPermissions.forEach {
+                        val flags = (if (it.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
+                            (if (it.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
+                        contentResolver.releasePersistableUriPermission(it.uri, flags)
+                    }
                     prefs.edit().remove("uris").apply(); latest = emptyMap(); result.success(null)
                 }
                 else -> result.notImplemented()
