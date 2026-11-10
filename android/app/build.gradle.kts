@@ -19,3 +19,4 @@ android {
     buildTypes { release { signingConfig = signingConfigs.getByName("debug") } }
 }
 flutter { source = "../.." }
+dependencies { implementation("androidx.core:core:1.15.0") }

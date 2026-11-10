@@ -1,16 +1,17 @@
 # ClearnFlow
 
-Flutter/Android storage review MVP. Product name follows the existing repository spelling. The UI takes its blue and white direction from the supplied mockups.
+Flutter/Android storage review MVP. The repository and package name retain **ClearnFlow**; the display brand is **CleanFlow**, matching the supplied mockups.
 
 ## What works
 
-- Device total and available storage from Android `StatFs`.
+- Usable internal shared-storage total and available space from Android `StatFs`, shown in decimal GB. The phone's advertised capacity can be larger because the system reserves part of the device.
+- First-run access flow opens Android's all-files access settings. After the user enables it, the app scans accessible shared storage, including downloads and documents. A limited, user-selected file/folder mode remains available.
 - Select folders or individual files with Android's Storage Access Framework. Access is saved where the document provider permits it; it can be revoked in Settings.
-- Inventory of selected files; large files (10 MB or more), downloads and screenshots within selected locations.
+- Inventory of accessible files; large files (10 MB or more), downloads, screenshots, images, videos, audio, documents and other files.
 - Duplicate candidates grouped by file size, then compared with full SHA-256 hashes. A matching name alone is not considered a duplicate.
-- File preview, explicit selection, in-app confirmation, and document-provider deletion. The app checks size and any scan-time hash again before deletion. Results count only files the provider confirms deleted. Local history records confirmed deletions only.
+- File preview, explicit selection, in-app confirmation, and deletion. The app checks size, modification time, and any scan-time hash again before deletion. Results count only confirmed deletions. Local history records confirmed deletions only.
 
-The storage meter represents device storage. File counts and sizes represent **only selected locations**, not the whole phone. Selecting the `Download` root is restricted on recent Android versions; select files within it using **Choose files**, or another permitted folder. Other apps' caches and private data are inaccessible. The app never claims to clear them.
+The storage meter represents usable device storage. File counts and sizes represent **accessible shared storage** after all-files access is enabled, or only user-selected locations in limited mode. `Android/data`, `Android/obb`, other apps' private data and system caches are excluded. The app never claims to clear them. An Android settings switch controls all-files access; it cannot be silently granted by the app. Google Play requires a [Permissions Declaration Form and approval](https://support.google.com/googleplay/android-developer/answer/10467955) for `MANAGE_EXTERNAL_STORAGE` before publication. If that approval is denied, remove the permission and use limited mode.
 
 ## Build
 
@@ -22,4 +23,4 @@ The Premium screen is informational. There is no AdMob SDK, ad unit, Billing SDK
 
 ## Privacy and limits
 
-No account, backend, analytics or network permission. Metadata and file content remain on-device; SHA-256 is computed locally. Selected URI grants and aggregate deletion history live in app preferences. Selecting a huge folder may take time; scans cap traversal at 20,000 files and 32 levels and report a warning. Some providers do not support deletion or persistence. A real-device test across Android 10, 13 and 15 and multiple providers is needed before Play publication.
+No account, backend, analytics or network permission. Metadata and file content remain on-device; SHA-256 is computed locally. Selected URI grants and aggregate deletion history live in app preferences. Broad scans cap traversal at 50,000 files; selected-folder scans cap at 20,000 files and 32 levels and report a warning. Some providers do not support deletion or persistence. A real-device test across Android 10, 13 and 15 and multiple providers is needed before Play publication. Login is a future feature, not needed for on-device cleaning.

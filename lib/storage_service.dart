@@ -2,6 +2,8 @@ import 'package:flutter/services.dart';
 import 'domain.dart';
 
 abstract class StorageService {
+  Future<bool> accessStatus();
+  Future<bool> requestAccess();
   Future<ScanReport> scan();
   Future<bool> chooseFolder();
   Future<bool> chooseFiles();
@@ -16,11 +18,15 @@ abstract class StorageService {
 class AndroidStorageService implements StorageService {
   static const channel = MethodChannel('clearnflow/storage');
   @override
+  Future<bool> accessStatus() async => await channel.invokeMethod<bool>('accessStatus') ?? false;
+  @override
+  Future<bool> requestAccess() async => await channel.invokeMethod<bool>('requestAccess') ?? false;
+  @override
   Future<ScanReport> scan() async {
     final m = (await channel.invokeMapMethod<Object?, Object?>('scan'))!;
     return ScanReport(files: (m['files']! as List).map((e) => StorageFile.fromMap(e as Map<Object?, Object?>)).toList(),
       total: (m['total']! as num).toInt(), available: (m['available']! as num).toInt(),
-      warnings: (m['warnings']! as List).cast<String>());
+      warnings: (m['warnings']! as List).cast<String>(), fullAccess: m['access'] == true);
   }
   @override
   Future<bool> chooseFolder() async => await channel.invokeMethod<bool>('chooseFolder') ?? false;

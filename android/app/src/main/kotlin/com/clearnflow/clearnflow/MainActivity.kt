@@ -5,13 +5,18 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.os.Build
 import android.os.StatFs
+import android.provider.Settings
 import android.provider.DocumentsContract
-import android.database.Cursor
+import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.security.MessageDigest
+import java.io.File
+import java.io.InputStream
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
@@ -21,7 +26,9 @@ class MainActivity : FlutterActivity() {
     private var pending: MethodChannel.Result? = null
     private var latest = emptyMap<String, Entry>()
     private data class Entry(val uri: Uri, val name: String, val path: String,
-                             val size: Long, val mime: String, val digest: String?)
+                             val size: Long, val mime: String, val digest: String?,
+                             val file: File? = null, val modified: Long = 0)
+    private fun broadAccess() = Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager()
 
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
@@ -29,6 +36,20 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "onboarded" -> result.success(prefs.getBoolean("onboarded", false))
                 "finishOnboarding" -> { prefs.edit().putBoolean("onboarded", true).apply(); result.success(null) }
+                "accessStatus" -> result.success(broadAccess())
+                "requestAccess" -> {
+                    if (broadAccess()) { result.success(true); return@setMethodCallHandler }
+                    if (Build.VERSION.SDK_INT < 30) { result.success(false); return@setMethodCallHandler }
+                    if (pending != null) { result.error("BUSY", "Picker already open", null); return@setMethodCallHandler }
+                    pending = result
+                    try {
+                        startActivityForResult(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:$packageName")), 102)
+                    } catch (e: Exception) {
+                        try { startActivityForResult(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION), 102) }
+                        catch (fallback: Exception) { pending = null; result.error("ACCESS", fallback.message, null) }
+                    }
+                }
                 "chooseFolder", "chooseFiles" -> {
                     if (pending != null) { result.error("BUSY", "Picker already open", null); return@setMethodCallHandler }
                     pending = result
@@ -54,11 +75,18 @@ class MainActivity : FlutterActivity() {
                             val entry = latest[id] ?: continue
                             try {
                                 // A file changed since scanning must be reviewed again.
-                                val currentSize = contentResolver.query(entry.uri, arrayOf(DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else -1L } ?: -1L
-                                if (currentSize != entry.size || (entry.digest != null && hash(entry.uri) != entry.digest)) {
+                                val currentSize = if (entry.file != null) entry.file.length() else
+                                    contentResolver.query(entry.uri, arrayOf(DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else -1L } ?: -1L
+                                val changed = currentSize != entry.size ||
+                                    (entry.file != null && entry.file.lastModified() != entry.modified) ||
+                                    (entry.digest != null && hash(entry) != entry.digest)
+                                if (changed) {
                                     failures.add("${entry.name}: changed since scan"); continue
                                 }
-                                if (DocumentsContract.deleteDocument(contentResolver, entry.uri)) {
+                                val removed = if (entry.file != null) {
+                                    if (!broadAccess()) false else entry.file.delete()
+                                } else DocumentsContract.deleteDocument(contentResolver, entry.uri)
+                                if (removed) {
                                     deleted.add(id); bytes += entry.size
                                 } else failures.add("${entry.name}: provider refused deletion")
                             } catch (e: Exception) { failures.add("${entry.name}: ${e.message ?: "deletion failed"}") }
@@ -73,8 +101,9 @@ class MainActivity : FlutterActivity() {
                 }
                 "preview" -> {
                     try {
-                        val uri = Uri.parse(call.arguments as String)
-                        startActivity(Intent(Intent.ACTION_VIEW).apply { setDataAndType(uri, contentResolver.getType(uri) ?: "*/*"); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) })
+                        val entry = latest[call.arguments as String] ?: throw IllegalArgumentException("Scan again to open this file")
+                        val uri = if (entry.file == null) entry.uri else FileProvider.getUriForFile(this, "$packageName.files", entry.file)
+                        startActivity(Intent(Intent.ACTION_VIEW).apply { setDataAndType(uri, entry.mime); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) })
                         result.success(null)
                     } catch (e: Exception) { result.error("PREVIEW", e.message, null) }
                 }
@@ -97,6 +126,7 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 102) { pending?.success(broadAccess()); pending = null; return }
         if (requestCode != 100 && requestCode != 101) return
         val result = pending ?: return
         pending = null
@@ -119,7 +149,11 @@ class MainActivity : FlutterActivity() {
     private fun scan(): Map<String, Any> {
         val warnings = mutableListOf<String>()
         val entries = linkedMapOf<String, Entry>()
-        val roots = (prefs.getString("uris", "") ?: "").lines().filter { it.isNotBlank() }
+        if (broadAccess()) {
+            val root = Environment.getExternalStorageDirectory()
+            walkFiles(root, root, entries, warnings, 0)
+        }
+        val roots = if (broadAccess()) emptyList() else (prefs.getString("uris", "") ?: "").lines().filter { it.isNotBlank() }
         for (root in roots) {
             try {
                 val uri = Uri.parse(root)
@@ -132,16 +166,35 @@ class MainActivity : FlutterActivity() {
         val sizeBuckets = entries.values.groupBy { it.size }.filterKeys { it > 0 }.filterValues { it.size > 1 }
         val digests = mutableMapOf<String, String?>()
         for (group in sizeBuckets.values) for (item in group) {
-            try { digests[item.uri.toString()] = hash(item.uri) }
+            try { digests[item.uri.toString()] = hash(item) }
             catch (e: Exception) { warnings.add("Could not read ${item.name}") }
         }
         latest = entries.mapValues { (_, e) -> e.copy(digest = digests[e.uri.toString()]) }
-        val stat = StatFs(Environment.getDataDirectory().path)
+        val stat = StatFs(Environment.getExternalStorageDirectory().path)
         return mapOf("total" to stat.totalBytes, "available" to stat.availableBytes,
-            "warnings" to warnings.take(25), "files" to latest.values.map {
+            "warnings" to warnings.take(25), "access" to broadAccess(), "files" to latest.values.map {
                 mapOf("uri" to it.uri.toString(), "name" to it.name, "path" to it.path,
                     "bytes" to it.size, "mime" to it.mime, "digest" to it.digest, "deletable" to true)
             })
+    }
+
+    private fun walkFiles(root: File, dir: File, out: MutableMap<String, Entry>, warnings: MutableList<String>, depth: Int) {
+        if (depth > 32 || out.size >= 50000) { warnings.add("Scan limit reached; some files are not shown."); return }
+        val children = dir.listFiles() ?: run { warnings.add("Could not read ${dir.name}"); return }
+        for (child in children) {
+            if (child.isDirectory) {
+                if (dir.name.equals("Android", true) &&
+                    (child.name.equals("data", true) || child.name.equals("obb", true))) continue
+                walkFiles(root, child, out, warnings, depth + 1)
+            } else if (child.isFile && child.canRead()) {
+                val uri = Uri.fromFile(child)
+                val extension = child.extension.lowercase()
+                val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "application/octet-stream"
+                out[uri.toString()] = Entry(uri, child.name, child.parentFile?.relativeTo(root)?.path ?: "",
+                    child.length(), mime, null, child, child.lastModified())
+            }
+            if (out.size >= 50000) { warnings.add("Scan limit reached; some files are not shown."); return }
+        }
     }
 
     private fun walk(dir: Uri, path: String, out: MutableMap<String, Entry>, warnings: MutableList<String>, depth: Int) {
@@ -174,9 +227,10 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) { warnings.add("Could not inspect a file in $path") }
     }
 
-    private fun hash(uri: Uri): String {
+    private fun hash(entry: Entry): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        contentResolver.openInputStream(uri)!!.use { input ->
+        val stream: InputStream = entry.file?.inputStream() ?: contentResolver.openInputStream(entry.uri)!!
+        stream.use { input ->
             val buffer = ByteArray(64 * 1024)
             while (true) { val n = input.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) }
         }

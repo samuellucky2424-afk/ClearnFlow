@@ -29,15 +29,16 @@ String formatBytes(int bytes) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   var n = bytes.toDouble();
   var unit = 0;
-  while (n >= 1024 && unit < units.length - 1) { n /= 1024; unit++; }
+  while (n >= 1000 && unit < units.length - 1) { n /= 1000; unit++; }
   return '${n.toStringAsFixed(unit == 0 ? 0 : 1)} ${units[unit]}';
 }
 
 class ScanReport {
-  const ScanReport({this.files = const [], this.total = 0, this.available = 0, this.warnings = const []});
+  const ScanReport({this.files = const [], this.total = 0, this.available = 0, this.warnings = const [], this.fullAccess = false});
   final List<StorageFile> files;
   final int total, available;
   final List<String> warnings;
+  final bool fullAccess;
   int get reviewedBytes => files.fold(0, (sum, f) => sum + f.bytes);
 }
 
