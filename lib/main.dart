@@ -171,8 +171,11 @@ class _HomeState extends State<Home> {
     ));
   Widget _resultPage(DeleteReport result) => Scaffold(appBar: AppBar(title: const Text('Cleaning results')),
     body: Padding(padding: const EdgeInsets.all(24), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const Icon(Icons.check_circle, color: Color(0xff00b985), size: 90), const SizedBox(height: 20),
-      Center(child: Text('${result.count} files deleted', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold))),
+      Icon(result.count == 0 ? Icons.info_outline : Icons.check_circle,
+        color: result.count == 0 ? const Color(0xffd87900) : const Color(0xff00b985),
+        size: 90), const SizedBox(height: 20),
+      Center(child: Text(result.count == 0 ? 'No files deleted' :
+        '${result.count} files deleted', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold))),
       Center(child: Text('${formatBytes(result.bytes)} removed', style: Theme.of(context).textTheme.titleLarge)),
       if (result.failures.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 24), child: Text('Could not delete:\n${result.failures.join('\n')}')),
       const Spacer(), FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
