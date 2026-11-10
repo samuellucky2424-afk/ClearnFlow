@@ -7,8 +7,14 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Build
 import android.os.StatFs
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.media.MediaMetadataRetriever
+import android.media.ThumbnailUtils
 import android.provider.Settings
 import android.provider.DocumentsContract
+import android.util.Size
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
@@ -17,6 +23,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.security.MessageDigest
 import java.io.File
 import java.io.InputStream
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
@@ -106,6 +113,13 @@ class MainActivity : FlutterActivity() {
                         startActivity(Intent(Intent.ACTION_VIEW).apply { setDataAndType(uri, entry.mime); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) })
                         result.success(null)
                     } catch (e: Exception) { result.error("PREVIEW", e.message, null) }
+                }
+                "thumbnail" -> worker.execute {
+                    val args = call.arguments as? Map<*, *>
+                    val id = args?.get("uri") as? String
+                    val size = ((args?.get("size") as? Number)?.toInt() ?: 192).coerceIn(48, 384)
+                    val bytes = id?.let { latest[it] }?.let { thumbnail(it, size) }
+                    runOnUiThread { result.success(bytes) }
                 }
                 "history" -> result.success((prefs.getString("history", "") ?: "").lines().filter { it.isNotBlank() }.take(30).mapNotNull {
                     val parts = it.split(','); if (parts.size != 3) null else mapOf("time" to parts[0].toLongOrNull(), "count" to parts[1].toIntOrNull(), "bytes" to parts[2].toLongOrNull())
@@ -263,5 +277,85 @@ class MainActivity : FlutterActivity() {
             if (read > 0) digest.update(end, 0, read)
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun thumbnail(entry: Entry, size: Int): ByteArray? {
+        val name = entry.name.lowercase()
+        val image = entry.mime.startsWith("image/")
+        val video = entry.mime.startsWith("video/")
+        val audio = entry.mime.startsWith("audio/")
+        val apk = name.endsWith(".apk")
+        if (!image && !video && !audio && !apk) return null
+        val target = Size(size, size)
+        var bitmap: Bitmap? = null
+        if (apk && entry.file != null) {
+            try {
+                val app = packageManager.getPackageArchiveInfo(entry.file.absolutePath, 0)?.applicationInfo
+                if (app != null) {
+                    app.sourceDir = entry.file.absolutePath
+                    app.publicSourceDir = entry.file.absolutePath
+                    val drawable = app.loadIcon(packageManager)
+                    bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also {
+                        val canvas = Canvas(it)
+                        drawable.setBounds(0, 0, size, size)
+                        drawable.draw(canvas)
+                    }
+                }
+            } catch (_: Exception) { /* Some installers have no readable icon. */ }
+        }
+        if (bitmap == null && Build.VERSION.SDK_INT >= 29) {
+            try {
+                bitmap = if (entry.file == null) {
+                    if (apk) null else contentResolver.loadThumbnail(entry.uri, target, null)
+                } else when {
+                    image -> ThumbnailUtils.createImageThumbnail(entry.file, target, null)
+                    video -> ThumbnailUtils.createVideoThumbnail(entry.file, target, null)
+                    audio -> ThumbnailUtils.createAudioThumbnail(entry.file, target, null)
+                    else -> null
+                }
+            } catch (_: Exception) { /* Fall through to direct decoding. */ }
+        }
+        if (bitmap == null && image) bitmap = decodeImage(entry, size)
+        if (bitmap == null && (video || audio)) {
+            val retriever = MediaMetadataRetriever()
+            try {
+                if (entry.file == null) retriever.setDataSource(this, entry.uri)
+                else retriever.setDataSource(entry.file.absolutePath)
+                bitmap = if (video) {
+                    if (Build.VERSION.SDK_INT >= 27) retriever.getScaledFrameAtTime(
+                        0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, size, size)
+                    else retriever.getFrameAtTime(0)
+                } else retriever.embeddedPicture?.let { decodeBytes(it, size) }
+            } catch (_: Exception) { /* Unsupported media gets a type icon. */ }
+            finally { retriever.release() }
+        }
+        val loaded = bitmap ?: return null
+        val output = ByteArrayOutputStream()
+        loaded.compress(if (apk) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG,
+            82, output)
+        return output.toByteArray()
+    }
+
+    private fun decodeImage(entry: Entry, size: Int): Bitmap? {
+        val open = { entry.file?.inputStream() ?: contentResolver.openInputStream(entry.uri) }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        try { open()?.use { BitmapFactory.decodeStream(it, null, bounds) } }
+        catch (_: Exception) { return null }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val options = BitmapFactory.Options()
+        while (bounds.outWidth / options.inSampleSize > size * 2 ||
+            bounds.outHeight / options.inSampleSize > size * 2) options.inSampleSize *= 2
+        return try { open()?.use { BitmapFactory.decodeStream(it, null, options) } }
+        catch (_: Exception) { null }
+    }
+
+    private fun decodeBytes(bytes: ByteArray, size: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val options = BitmapFactory.Options()
+        while (bounds.outWidth / options.inSampleSize > size * 2 ||
+            bounds.outHeight / options.inSampleSize > size * 2) options.inSampleSize *= 2
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
     }
 }

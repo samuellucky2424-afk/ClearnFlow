@@ -41,6 +41,17 @@ bool maySelectDuplicate(StorageFile candidate, List<StorageFile> group, Set<Stri
     !selected.contains(candidate.uri) &&
     group.where((file) => selected.contains(file.uri)).length < group.length - 1;
 
+Set<String> selectAllDuplicateCopies(Iterable<List<StorageFile>> groups) {
+  final chosen = <String>{};
+  for (final group in groups) {
+    if (group.length < 2) continue;
+    final keep = suggestedKeep(group).uri;
+    chosen.addAll(group.where((file) => file.deletable && file.uri != keep)
+        .map((file) => file.uri));
+  }
+  return chosen;
+}
+
 String formatBytes(int bytes) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   var n = bytes.toDouble();

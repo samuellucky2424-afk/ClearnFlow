@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'domain.dart';
 import 'findings.dart';
@@ -36,6 +36,7 @@ class _HomeState extends State<Home> {
   bool busy = false, splash = true, welcome = false, needsAccess = false;
   int tab = 0;
   final selected = <String>{};
+  final thumbnails = <String, Future<Uint8List?>>{};
   DeleteReport? lastDelete;
   String? error;
   @override void initState() { super.initState(); _initialize(); }
@@ -60,7 +61,7 @@ class _HomeState extends State<Home> {
   }
   Future<void> _scan() async {
     setState(() { busy = true; error = null; selected.clear(); });
-    try { final next = await widget.service.scan(); if (mounted) setState(() => report = next); }
+    try { final next = await widget.service.scan(); if (mounted) setState(() { report = next; thumbnails.clear(); }); }
     catch (e) { if (mounted) setState(() => error = '$e'); }
     finally { if (mounted) setState(() => busy = false); }
   }
@@ -134,16 +135,47 @@ class _HomeState extends State<Home> {
       const Spacer(), FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
     ])));
   void _openArea(Area area) { selected.clear(); Navigator.push(context, MaterialPageRoute(builder: (_) => area == Area.duplicates ? _duplicatesPage() : _areaPage(area))); }
-  Widget _artwork(StorageFile file, {double size = 52}) {
-    if (file.mime.startsWith('image/') && file.uri.startsWith('file:')) {
-      return ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(
-        File.fromUri(Uri.parse(file.uri)), width: size, height: size, fit: BoxFit.cover,
-        cacheWidth: 360, errorBuilder: (_, _, _) => Icon(Icons.broken_image_outlined, color: blue, size: size * .6),
-      ));
+  Future<Uint8List?> _loadThumbnail(String uri) async {
+    try { return await widget.service.thumbnail(uri, 256); }
+    catch (_) { return null; }
+  }
+  Future<Uint8List?> _thumbnail(StorageFile file) {
+    final key = '${file.uri}:${file.modified}';
+    if (!thumbnails.containsKey(key) && thumbnails.length >= 160) {
+      thumbnails.remove(thumbnails.keys.first);
     }
-    final icon = file.mime.startsWith('video/') ? Icons.movie_outlined :
-      file.mime.startsWith('audio/') ? Icons.music_note_outlined : Icons.insert_drive_file_outlined;
-    return SizedBox(width: size, height: size, child: ColoredBox(color: const Color(0xffe8f1ff), child: Icon(icon, color: blue, size: size * .55)));
+    return thumbnails.putIfAbsent(key, () => _loadThumbnail(file.uri));
+  }
+  Widget _fileIcon(StorageFile file, double size) {
+    final name = file.name.toLowerCase();
+    final icon = file.mime.startsWith('image/') ? Icons.image_outlined :
+      file.mime.startsWith('video/') ? Icons.movie_outlined :
+      file.mime.startsWith('audio/') ? Icons.music_note_outlined :
+      name.endsWith('.apk') ? Icons.android :
+      name.endsWith('.pdf') ? Icons.picture_as_pdf_outlined :
+      ['.zip', '.rar', '.7z'].any(name.endsWith) ? Icons.folder_zip_outlined :
+      Icons.description_outlined;
+    final color = name.endsWith('.pdf') ? const Color(0xffd84343) :
+      file.mime.startsWith('audio/') ? const Color(0xff8552df) : blue;
+    return SizedBox(width: size, height: size, child: ColoredBox(
+      color: const Color(0xffe8f1ff), child: Icon(icon, color: color, size: size * .52)));
+  }
+  Widget _artwork(StorageFile file, {double size = 52}) {
+    final visual = file.mime.startsWith('image/') || file.mime.startsWith('video/') ||
+        file.mime.startsWith('audio/') || file.name.toLowerCase().endsWith('.apk');
+    if (!visual) return _fileIcon(file, size);
+    return ClipRRect(borderRadius: BorderRadius.circular(12), child: FutureBuilder<Uint8List?>(
+      future: _thumbnail(file), builder: (context, snapshot) {
+        final bytes = snapshot.data;
+        if (bytes == null) return _fileIcon(file, size);
+        return Stack(alignment: Alignment.center, children: [
+          Image.memory(bytes, width: size, height: size, fit: BoxFit.cover,
+            gaplessPlayback: true, errorBuilder: (_, _, _) => _fileIcon(file, size)),
+          if (file.mime.startsWith('video/')) Container(
+            decoration: const BoxDecoration(color: Color(0x99071438), shape: BoxShape.circle),
+            child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: size * .34)),
+        ]);
+      }));
   }
   Widget _duplicatesPage() => StatefulBuilder(builder: (context, refresh) {
     final groups = duplicateGroups(report.files).values.toList()
@@ -158,17 +190,34 @@ class _HomeState extends State<Home> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('${groups.length} groups • ${visible.length} identical files', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             Text('Up to ${formatBytes(avoidableBytes)} if one copy from each group is kept.'),
-            const Text('All selections start empty. Open files to review them.'),
+            const Text('No files are selected at first. Tap a preview to open it.'),
+            const Text('The oldest known copy is suggested to keep; its age does not prove it is the original.'),
           ])),
+        if (groups.isNotEmpty) Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: Row(children: [
+          Expanded(child: OutlinedButton.icon(onPressed: () => refresh(() {
+            selected..clear()..addAll(selectAllDuplicateCopies(groups));
+          }), icon: const Icon(Icons.select_all), label: const Text('Select duplicates'))),
+          const SizedBox(width: 8),
+          TextButton(onPressed: selected.isEmpty ? null : () => refresh(selected.clear),
+            child: const Text('Deselect all')),
+        ])),
         if (groups.isEmpty) const Expanded(child: Center(child: Text('No exact duplicates found in accessible files.')))
         else Expanded(child: ListView.builder(itemCount: groups.length, itemBuilder: (context, index) {
           final group = groups[index].toList()..sort((a, b) => a.modified.compareTo(b.modified));
           final recommended = suggestedKeep(group);
           return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Padding(padding: const EdgeInsets.fromLTRB(18, 18, 18, 8), child: Text(
-              '${group.length} identical • ${formatBytes(group.first.bytes)} each',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold))),
-            SizedBox(height: 210, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 14),
+            Padding(padding: const EdgeInsets.fromLTRB(18, 14, 12, 8), child: Row(children: [
+              Expanded(child: Text('${group.length} identical • ${formatBytes(group.first.bytes)} each',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+              TextButton(onPressed: () => refresh(() {
+                for (final file in group) { selected.remove(file.uri); }
+                selected.addAll(selectAllDuplicateCopies([group]));
+              }), child: const Text('Select others')),
+              TextButton(onPressed: group.any((file) => selected.contains(file.uri))
+                ? () => refresh(() { for (final file in group) { selected.remove(file.uri); } })
+                : null, child: const Text('Clear')),
+            ])),
+            SizedBox(height: 224, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 14),
               scrollDirection: Axis.horizontal, itemCount: group.length,
               separatorBuilder: (_, _) => const SizedBox(width: 8), itemBuilder: (context, i) {
                 final file = group[i];
@@ -188,8 +237,8 @@ class _HomeState extends State<Home> {
                         })),
                     ]),
                     Padding(padding: const EdgeInsets.symmetric(horizontal: 7), child: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
-                    Padding(padding: const EdgeInsets.symmetric(horizontal: 7), child: Text(formatBytes(file.bytes))),
-                    if (file.uri == recommended.uri) const Padding(padding: EdgeInsets.symmetric(horizontal: 7), child: Text('Keep suggested (oldest)', style: TextStyle(color: Color(0xff008c72), fontWeight: FontWeight.bold, fontSize: 12))),
+                    Padding(padding: const EdgeInsets.symmetric(horizontal: 7), child: Text('${formatBytes(file.bytes)} • ${file.path}', maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    if (file.uri == recommended.uri) const Padding(padding: EdgeInsets.symmetric(horizontal: 7), child: Text('Keep suggested', style: TextStyle(color: Color(0xff008c72), fontWeight: FontWeight.bold, fontSize: 12))),
                   ]))));
               })),
           ]);

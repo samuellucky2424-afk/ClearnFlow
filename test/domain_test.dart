@@ -21,4 +21,16 @@ void main() {
     expect(maySelectDuplicate(b, group, {a.uri}), isFalse);
     expect(suggestedKeep(group).uri, 'a');
   });
+  test('select all duplicates keeps one per group and can be cleared', () {
+    final a = file('a', 'first', 100);
+    final b = file('b', 'first', 100);
+    final c = file('c', 'first', 100);
+    final d = file('d', 'second', 50);
+    final e = file('e', 'second', 50);
+    final selected = selectAllDuplicateCopies([[a, b, c], [d, e]]);
+    expect(selected, {'b', 'c', 'e'});
+    expect(selected.length, 3);
+    selected.clear();
+    expect(selected, isEmpty);
+  });
 }

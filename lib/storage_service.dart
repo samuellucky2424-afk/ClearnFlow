@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'domain.dart';
 
@@ -8,6 +9,7 @@ abstract class StorageService {
   Future<bool> chooseFolder();
   Future<bool> chooseFiles();
   Future<void> preview(String uri);
+  Future<Uint8List?> thumbnail(String uri, int size);
   Future<DeleteReport> delete(List<String> uris);
   Future<bool> onboarded();
   Future<void> finishOnboarding();
@@ -35,6 +37,9 @@ class AndroidStorageService implements StorageService {
   Future<bool> chooseFiles() async => await channel.invokeMethod<bool>('chooseFiles') ?? false;
   @override
   Future<void> preview(String uri) => channel.invokeMethod('preview', uri);
+  @override
+  Future<Uint8List?> thumbnail(String uri, int size) =>
+      channel.invokeMethod<Uint8List>('thumbnail', {'uri': uri, 'size': size});
   @override
   Future<DeleteReport> delete(List<String> uris) async {
     final m = (await channel.invokeMapMethod<Object?, Object?>('delete', uris))!;
