@@ -102,6 +102,13 @@ class _HomeState extends State<Home> {
   Future<void> _delete(List<StorageFile> visible) async {
     final items = visible.where((f) => selected.contains(f.uri)).toList();
     if (items.isEmpty) return;
+    final deleting = items.map((f) => f.uri).toSet();
+    if (duplicateGroups(report.files).values.any((group) =>
+        group.every((file) => deleting.contains(file.uri)))) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Keep at least one copy in each duplicate group.')));
+      return;
+    }
     final bytes = items.fold<int>(0, (n, f) => n + f.bytes);
     final confirmed = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
       title: const Text('Delete selected files?'),
@@ -212,7 +219,15 @@ class _HomeState extends State<Home> {
               title: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text('${formatBytes(f.bytes)}  •  ${f.path}${f.modified == 0 ? '' : '\nModified ${DateTime.fromMillisecondsSinceEpoch(f.modified).toLocal().toString().split(' ').first}'}${groupSize == null ? '' : '  •  $groupSize identical'}${area == Area.review ? '\n${reviewFinding(f, DateTime.now())?.reason ?? ''}' : ''}', maxLines: 4),
               onTap: () async { try { await widget.service.preview(f.uri); } catch (e) { if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))); } },
-              trailing: Checkbox(value: selected.contains(f.uri), onChanged: f.deletable ? (v) => refresh(() { if (v == true) { selected.add(f.uri); } else { selected.remove(f.uri); } }) : null),
+              trailing: Checkbox(value: selected.contains(f.uri), onChanged: f.deletable ? (v) {
+                final group = groups['${f.bytes}:${f.digest}'];
+                if (v == true && group != null && !maySelectDuplicate(f, group, selected)) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Keep at least one copy in each duplicate group.')));
+                  return;
+                }
+                refresh(() { if (v == true) { selected.add(f.uri); } else { selected.remove(f.uri); } });
+              } : null),
             ));
           })),
           if (files.isNotEmpty) Padding(padding: const EdgeInsets.all(16), child: SizedBox(width: double.infinity, child: FilledButton.icon(
