@@ -188,7 +188,7 @@ class _HomeState extends State<Home> {
         Container(width: double.infinity, margin: const EdgeInsets.all(14), padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(color: const Color(0xffe3ecff), borderRadius: BorderRadius.circular(20)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${groups.length} groups • ${visible.length} identical files', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('${groups.length} ${groups.length == 1 ? 'group' : 'groups'} • ${visible.length} identical files', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             Text('Up to ${formatBytes(avoidableBytes)} if one copy from each group is kept.'),
             const Text('No files are selected at first. Tap a preview to open it.'),
             const Text('The oldest known copy is suggested to keep; its age does not prove it is the original.'),
@@ -196,7 +196,7 @@ class _HomeState extends State<Home> {
         if (groups.isNotEmpty) Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: Row(children: [
           Expanded(child: OutlinedButton.icon(onPressed: () => refresh(() {
             selected..clear()..addAll(selectAllDuplicateCopies(groups));
-          }), icon: const Icon(Icons.select_all), label: const Text('Select duplicates'))),
+          }), icon: const Icon(Icons.select_all), label: const Text('Select all duplicates'))),
           const SizedBox(width: 8),
           TextButton(onPressed: selected.isEmpty ? null : () => refresh(selected.clear),
             child: const Text('Deselect all')),
