@@ -39,4 +39,14 @@ void main() {
     selected.clear();
     expect(selected, isEmpty);
   });
+  test('deletion progress reports only confirmed removed bytes', () {
+    final progress = DeleteProgress.fromMap({
+      'total': 3, 'processed': 2, 'deleted': 1, 'bytes': 32,
+      'stage': 'checking', 'name': 'third.txt',
+    });
+    expect(progress.processed, 2);
+    expect(progress.deleted, 1);
+    expect(progress.bytes, 32);
+    expect(progress.name, 'third.txt');
+  });
 }

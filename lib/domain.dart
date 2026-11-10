@@ -80,3 +80,18 @@ class DeleteReport {
   final int count, bytes;
   final List<String> failures;
 }
+
+class DeleteProgress {
+  const DeleteProgress({required this.total, this.processed = 0, this.deleted = 0,
+    this.bytes = 0, this.stage = 'starting', this.name = ''});
+  factory DeleteProgress.fromMap(Map<Object?, Object?> value) => DeleteProgress(
+    total: (value['total'] as num).toInt(),
+    processed: (value['processed'] as num).toInt(),
+    deleted: (value['deleted'] as num).toInt(),
+    bytes: (value['bytes'] as num).toInt(),
+    stage: value['stage'] as String,
+    name: value['name'] as String? ?? '',
+  );
+  final int total, processed, deleted, bytes;
+  final String stage, name;
+}

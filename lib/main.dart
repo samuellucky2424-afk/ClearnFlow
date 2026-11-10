@@ -101,6 +101,7 @@ class _HomeState extends State<Home> {
     Area.audio => Icons.music_note_outlined, Area.documents => Icons.description_outlined,
     Area.other => Icons.insert_drive_file_outlined, Area.all => Icons.folder_open_outlined};
   Future<void> _delete(List<StorageFile> visible) async {
+    if (busy) return;
     final items = visible.where((f) => selected.contains(f.uri)).toList();
     if (items.isEmpty) return;
     final deleting = items.map((f) => f.uri).toSet();
@@ -116,16 +117,58 @@ class _HomeState extends State<Home> {
       content: Text('Delete ${items.length} file(s), currently ${formatBytes(bytes)}? This cannot be undone. Open a file first if you are unsure.'),
       actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
         FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Delete'))]));
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
     setState(() => busy = true);
+    final progress = ValueNotifier(DeleteProgress(total: items.length));
+    final dialog = showDialog<void>(context: context, barrierDismissible: false,
+      builder: (_) => _deleteProgressDialog(progress));
+    DeleteReport? result;
+    Object? failure;
     try {
-      final result = await widget.service.delete(items.map((e) => e.uri).toList());
+      result = await widget.service.delete(items.map((e) => e.uri).toList(),
+        onProgress: (next) { if (mounted) progress.value = next; });
       lastDelete = result;
+      progress.value = DeleteProgress(total: items.length, processed: items.length,
+        deleted: result.count, bytes: result.bytes, stage: 'refreshing');
       await _scan();
-      if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => _resultPage(result)));
-    } catch (e) { if (mounted) setState(() => error = '$e'); }
-    finally { if (mounted) setState(() => busy = false); }
+    } catch (e) { failure = e; }
+    finally {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        await dialog;
+        setState(() => busy = false);
+      }
+      progress.dispose();
+    }
+    if (!mounted) return;
+    if (result != null) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => _resultPage(result!)));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Could not finish deletion: $failure')));
+    }
   }
+  Widget _deleteProgressDialog(ValueNotifier<DeleteProgress> progress) => PopScope(
+    canPop: false, child: AlertDialog(
+      title: const Text('Checking and deleting files'),
+      content: ValueListenableBuilder<DeleteProgress>(valueListenable: progress,
+        builder: (context, value, _) => Column(mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [const SizedBox(width: 22, height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2)), const SizedBox(width: 12),
+            Expanded(child: Text(value.stage == 'refreshing' ? 'Refreshing file list…' :
+              value.stage == 'checking' ? 'Checking ${value.processed + 1} of ${value.total}…' :
+              'Processing ${value.processed} of ${value.total}…'))]),
+          const SizedBox(height: 18),
+          LinearProgressIndicator(value: value.stage == 'starting' || value.stage == 'refreshing'
+            ? null : value.processed / value.total),
+          const SizedBox(height: 12),
+          Text('${value.processed} of ${value.total} files checked'),
+          Text('${value.deleted} deleted • ${formatBytes(value.bytes)} removed'),
+          if (value.name.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8),
+            child: Text(value.name, maxLines: 2, overflow: TextOverflow.ellipsis)),
+        ])),
+    ));
   Widget _resultPage(DeleteReport result) => Scaffold(appBar: AppBar(title: const Text('Cleaning results')),
     body: Padding(padding: const EdgeInsets.all(24), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const Icon(Icons.check_circle, color: Color(0xff00b985), size: 90), const SizedBox(height: 20),

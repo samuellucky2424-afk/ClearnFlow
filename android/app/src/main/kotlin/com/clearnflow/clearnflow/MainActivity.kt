@@ -30,6 +30,7 @@ class MainActivity : FlutterActivity() {
     private val channelName = "clearnflow/storage"
     private val prefs by lazy { getSharedPreferences("clearnflow", MODE_PRIVATE) }
     private val worker = Executors.newSingleThreadExecutor()
+    private lateinit var channel: MethodChannel
     private var pending: MethodChannel.Result? = null
     private var latest = emptyMap<String, Entry>()
     private data class Entry(val uri: Uri, val name: String, val path: String,
@@ -39,7 +40,8 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
-        MethodChannel(engine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
+        channel = MethodChannel(engine.dartExecutor.binaryMessenger, channelName)
+        channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "onboarded" -> result.success(prefs.getBoolean("onboarded", false))
                 "finishOnboarding" -> { prefs.edit().putBoolean("onboarded", true).apply(); result.success(null) }
@@ -77,9 +79,18 @@ class MainActivity : FlutterActivity() {
                         val deleted = mutableListOf<String>()
                         val failures = mutableListOf<String>()
                         var bytes = 0L
-                        for (candidate in uris) {
-                            val id = candidate as? String ?: continue
-                            val entry = latest[id] ?: continue
+                        emitDeleteProgress(uris.size, 0, 0, 0, "starting", "")
+                        for ((index, candidate) in uris.withIndex()) {
+                            val id = candidate as? String
+                            val entry = id?.let { latest[it] }
+                            if (entry == null) {
+                                failures.add("A selected file is no longer in the latest scan")
+                                emitDeleteProgress(uris.size, index + 1, deleted.size, bytes,
+                                    "processed", "")
+                                continue
+                            }
+                            emitDeleteProgress(uris.size, index, deleted.size, bytes,
+                                "checking", entry.name)
                             try {
                                 // A file changed since scanning must be reviewed again.
                                 val currentSize = if (entry.file != null) entry.file.length() else
@@ -88,15 +99,18 @@ class MainActivity : FlutterActivity() {
                                     (entry.file != null && entry.file.lastModified() != entry.modified) ||
                                     (entry.digest != null && hash(entry) != entry.digest)
                                 if (changed) {
-                                    failures.add("${entry.name}: changed since scan"); continue
+                                    failures.add("${entry.name}: changed since scan")
+                                } else {
+                                    val removed = if (entry.file != null) {
+                                        if (!broadAccess()) false else entry.file.delete()
+                                    } else DocumentsContract.deleteDocument(contentResolver, entry.uri)
+                                    if (removed) {
+                                        deleted.add(entry.uri.toString()); bytes += entry.size
+                                    } else failures.add("${entry.name}: provider refused deletion")
                                 }
-                                val removed = if (entry.file != null) {
-                                    if (!broadAccess()) false else entry.file.delete()
-                                } else DocumentsContract.deleteDocument(contentResolver, entry.uri)
-                                if (removed) {
-                                    deleted.add(id); bytes += entry.size
-                                } else failures.add("${entry.name}: provider refused deletion")
                             } catch (e: Exception) { failures.add("${entry.name}: ${e.message ?: "deletion failed"}") }
+                            emitDeleteProgress(uris.size, index + 1, deleted.size, bytes,
+                                "processed", entry.name)
                         }
                         latest = latest.filterKeys { it !in deleted }
                         if (deleted.isNotEmpty()) {
@@ -158,6 +172,13 @@ class MainActivity : FlutterActivity() {
         }
         prefs.edit().putString("uris", saved.joinToString("\n")).apply()
         result.success(uris.isNotEmpty())
+    }
+
+    private fun emitDeleteProgress(total: Int, processed: Int, deleted: Int,
+                                   bytes: Long, stage: String, name: String) {
+        runOnUiThread { channel.invokeMethod("deleteProgress", mapOf(
+            "total" to total, "processed" to processed, "deleted" to deleted,
+            "bytes" to bytes, "stage" to stage, "name" to name)) }
     }
 
     private fun scan(): Map<String, Any> {

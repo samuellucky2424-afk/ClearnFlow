@@ -9,7 +9,8 @@ abstract class StorageService {
   Future<bool> chooseFiles();
   Future<void> preview(String uri);
   Future<Uint8List?> thumbnail(String uri, int size);
-  Future<DeleteReport> delete(List<String> uris);
+  Future<DeleteReport> delete(List<String> uris,
+      {void Function(DeleteProgress)? onProgress});
   Future<bool> onboarded();
   Future<void> finishOnboarding();
   Future<void> forgetAccess();
@@ -40,9 +41,19 @@ class AndroidStorageService implements StorageService {
   Future<Uint8List?> thumbnail(String uri, int size) =>
       channel.invokeMethod<Uint8List>('thumbnail', {'uri': uri, 'size': size});
   @override
-  Future<DeleteReport> delete(List<String> uris) async {
-    final m = (await channel.invokeMapMethod<Object?, Object?>('delete', uris))!;
-    return DeleteReport((m['count']! as num).toInt(), (m['bytes']! as num).toInt(), (m['failures']! as List).cast<String>());
+  Future<DeleteReport> delete(List<String> uris,
+      {void Function(DeleteProgress)? onProgress}) async {
+    channel.setMethodCallHandler((call) async {
+      if (call.method == 'deleteProgress' && onProgress != null) {
+        onProgress(DeleteProgress.fromMap(call.arguments as Map<Object?, Object?>));
+      }
+    });
+    try {
+      final m = (await channel.invokeMapMethod<Object?, Object?>('delete', uris))!;
+      return DeleteReport((m['count']! as num).toInt(), (m['bytes']! as num).toInt(), (m['failures']! as List).cast<String>());
+    } finally {
+      channel.setMethodCallHandler(null);
+    }
   }
   @override
   Future<bool> onboarded() async => await channel.invokeMethod<bool>('onboarded') ?? false;
