@@ -12,8 +12,10 @@ class ReviewFinding {
 ReviewFinding? reviewFinding(StorageFile file, DateTime now) {
   final name = file.name.toLowerCase();
   final path = file.path.toLowerCase().replaceAll('\\', '/');
-  if (name.endsWith('.tmp') || name.endsWith('.temp') || name == 'thumbs.db' ||
-      path.split('/').any((part) => part == '.thumbnails')) {
+  final thumbnailImage = path.split('/').contains('.thumbnails') &&
+      (file.mime.startsWith('image/') ||
+       ['.jpg', '.jpeg', '.png', '.webp', '.heic'].any(name.endsWith));
+  if (name.endsWith('.tmp') || name.endsWith('.temp') || thumbnailImage) {
     return ReviewFinding(file, ReviewKind.temporary,
       'Looks temporary. Open it and check before deleting.');
   }

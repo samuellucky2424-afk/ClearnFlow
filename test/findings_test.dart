@@ -22,4 +22,10 @@ void main() {
   test('recent downloads are not marked old', () {
     expect(reviewFinding(file('new.txt', 'Download', now), now), isNull);
   });
+  test('thumbnail metadata is not suggested for removal', () {
+    expect(reviewFinding(file('.nomedia', 'Pictures/.thumbnails', now), now), isNull);
+    expect(reviewFinding(file('.database_uuid', 'Pictures/.thumbnails', now), now), isNull);
+    expect(reviewFinding(file('94.jpg', 'Pictures/.thumbnails', now), now)?.kind,
+      ReviewKind.temporary);
+  });
 }
