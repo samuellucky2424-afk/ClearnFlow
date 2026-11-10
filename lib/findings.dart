@@ -34,6 +34,5 @@ ReviewFinding? reviewFinding(StorageFile file, DateTime now) {
   return null;
 }
 
-List<ReviewFinding> reviewFindings(List<StorageFile> files, DateTime now) => [
-  for (final file in files) if (reviewFinding(file, now) case final finding?) finding,
-];
+List<ReviewFinding> reviewFindings(List<StorageFile> files, DateTime now) =>
+    files.map((file) => reviewFinding(file, now)).whereType<ReviewFinding>().toList();
