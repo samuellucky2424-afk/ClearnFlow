@@ -38,7 +38,7 @@ class _HomeState extends State<Home> {
   String? error;
   @override void initState() { super.initState(); _initialize(); }
   Future<void> _initialize() async {
-    try { welcome = !(await widget.service.onboarded()); if (!welcome) await _scan(); else setState(() {}); }
+    try { welcome = !(await widget.service.onboarded()); if (!welcome) { await _scan(); } else { setState(() {}); } }
     catch (e) { setState(() => error = '$e'); }
   }
   Future<void> _scan() async {
@@ -115,7 +115,7 @@ class _HomeState extends State<Home> {
               title: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text('${formatBytes(f.bytes)}  •  ${f.path}${groupSize == null ? '' : '  •  $groupSize identical'}', maxLines: 2),
               onTap: () async { try { await widget.service.preview(f.uri); } catch (e) { if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))); } },
-              trailing: Checkbox(value: selected.contains(f.uri), onChanged: f.deletable ? (v) => refresh(() { if (v == true) selected.add(f.uri); else selected.remove(f.uri); }) : null),
+              trailing: Checkbox(value: selected.contains(f.uri), onChanged: f.deletable ? (v) => refresh(() { if (v == true) { selected.add(f.uri); } else { selected.remove(f.uri); } }) : null),
             ));
           })),
           if (files.isNotEmpty) Padding(padding: const EdgeInsets.all(16), child: SizedBox(width: double.infinity, child: FilledButton.icon(
@@ -125,14 +125,14 @@ class _HomeState extends State<Home> {
     });
   }
   @override Widget build(BuildContext context) {
-    if (welcome) return Scaffold(body: SafeArea(child: Padding(padding: const EdgeInsets.all(28), child: Column(
+    if (welcome) { return Scaffold(body: SafeArea(child: Padding(padding: const EdgeInsets.all(28), child: Column(
       mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         const Icon(Icons.cleaning_services_rounded, color: blue, size: 96),
         const SizedBox(height: 20), Text('ClearnFlow', textAlign: TextAlign.center, style: Theme.of(context).textTheme.displaySmall?.copyWith(color: blue, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16), const Text('Make room for what matters.', textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12), const Text('Choose folders or individual files to review. ClearnFlow checks duplicates and large files, then asks before deletion. Your files stay on your device.', textAlign: TextAlign.center),
         const SizedBox(height: 32), FilledButton(onPressed: () async { await widget.service.finishOnboarding(); setState(() => welcome = false); await _scan(); }, child: const Text('Get started')),
-      ]))));
+      ])))); }
     return Scaffold(appBar: AppBar(title: const Text('ClearnFlow', style: TextStyle(color: blue, fontWeight: FontWeight.w800)), actions: [IconButton(onPressed: () => setState(() => tab = 3), icon: const Icon(Icons.settings_outlined))]),
       body: busy && report.files.isEmpty ? const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(), SizedBox(height: 16), Text('Scanning selected files…')]))
         : switch (tab) { 0 => _dashboard(), 1 => _tools(), 2 => _history(), _ => _settings() },
@@ -177,7 +177,18 @@ class _HomeState extends State<Home> {
     Text('Settings', style: Theme.of(context).textTheme.titleLarge),
     const Card(child: ListTile(leading: Icon(Icons.info_outline), title: Text('ClearnFlow MVP'), subtitle: Text('Private, on-device storage review'))),
     Card(child: ListTile(leading: const Icon(Icons.folder_off_outlined), title: const Text('Forget selected locations'), subtitle: const Text('Remove folder and file access granted to this app'), onTap: () async { await widget.service.forgetAccess(); await _scan(); })),
-    Card(child: ListTile(leading: const Icon(Icons.workspace_premium_outlined), title: const Text('Premium'), subtitle: const Text('Purchases are not available yet'), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: const Text('Premium')), body: const Center(child: Padding(padding: EdgeInsets.all(28), child: Text('Premium is coming later. No payment is charged in this version.', textAlign: TextAlign.center))))))),
+    Card(child: ListTile(
+      leading: const Icon(Icons.workspace_premium_outlined),
+      title: const Text('Premium'),
+      subtitle: const Text('Purchases are not available yet'),
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
+        appBar: AppBar(title: const Text('Premium')),
+        body: const Center(child: Padding(padding: EdgeInsets.all(28), child: Text(
+          'Premium is coming later. No payment is charged in this version.',
+          textAlign: TextAlign.center,
+        ))),
+      ))),
+    )),
     const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('Ads and purchases are disabled until configured, tested, and reviewed.'))),
   ]);
 }
